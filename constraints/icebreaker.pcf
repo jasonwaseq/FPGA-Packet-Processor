@@ -1,0 +1,11 @@
+# iCEBreaker v1.0b pin assignments for packet_processor_top
+# Clock: 12 MHz on dedicated global clock pin
+set_io clk_i 35
+set_frequency clk_i 12
+
+# User button is active-low and maps directly to rst_n_i
+set_io rst_n_i 10
+
+# FTDI UART bridge (FPGA RX from FTDI TX, FPGA TX to FTDI RX)
+set_io uart_rx_i 6
+set_io uart_tx_o 9

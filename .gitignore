@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Yosys / nextpnr / cocotb / Verilator outputs
+build/
+*.vvp
+results.xml
+*.vcd
+*.fst
+*.fst.hier
+
+# Stray synthesis artifacts if tools run from repo root
+/*.asc
+/*.bin
+/*_yosys.log
+/*_nextpnr.rpt
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Optional other EDA flows
+*.jou
+.Xil/

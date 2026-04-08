@@ -1,0 +1,11 @@
+# Alternate iCEBreaker UART mapping for board revisions/tooling where
+# FTDI UART directions are interpreted opposite to constraints/icebreaker.pcf.
+set_io clk_i 35
+set_frequency clk_i 12
+set_io rst_n_i 10
+
+# Swapped UART assignment:
+# - FPGA RX from FTDI TX on pin 9
+# - FPGA TX to FTDI RX on pin 6
+set_io uart_rx_i 9
+set_io uart_tx_o 6
