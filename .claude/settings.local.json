@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wsl -e bash -c \"cd /mnt/c/Users/jason/Documents/FPGA-Packet-Processor && make bitstream_packet_up5k 2>&1\")",
+      "Bash(wsl -e bash -c \"tail -30 /mnt/c/Users/jason/.claude/projects/c--Users-jason-Documents-FPGA-Packet-Processor/0c50f98c-9093-4173-a88d-2dfccc883ec4/tool-results/b9ooi10gv.txt\")",
+      "Bash(wsl -e bash -c \"cd /mnt/c/Users/jason/Documents/FPGA-Packet-Processor && make flash_packet_up5k 2>&1\")",
+      "Bash(wsl -e bash -c \"tail -10 /mnt/c/Users/jason/.claude/projects/c--Users-jason-Documents-FPGA-Packet-Processor/0c50f98c-9093-4173-a88d-2dfccc883ec4/tool-results/bo4iknyev.txt\")",
+      "Bash(wsl -e bash -c \"cat /mnt/c/Users/jason/.claude/projects/c--Users-jason-Documents-FPGA-Packet-Processor/0c50f98c-9093-4173-a88d-2dfccc883ec4/tool-results/btmgbtuun.txt | grep -E '\\(cdone|verify|make\\\\[1\\\\]|error|FAIL\\)' 2>&1\")",
+      "Bash(wsl -e bash -c \"cd /mnt/c/Users/jason/Documents/FPGA-Packet-Processor && .venv/bin/python -m host.validate_project_hw --port auto --baud 115200 --timeout 2.0 2>&1\")",
+      "Bash(wsl -e bash -c \"ls /dev/ttyUSB* 2>&1 && python3 -c \\\\\"import serial.tools.list_ports; [print\\(p.device, p.description\\) for p in serial.tools.list_ports.comports\\(\\)]\\\\\" 2>/dev/null || .venv/bin/python -c \\\\\"import serial.tools.list_ports; [print\\(p.device, p.description\\) for p in serial.tools.list_ports.comports\\(\\)]\\\\\"\")",
+      "Bash(wsl -e bash -c \"ls -la /dev/ttyUSB* 2>&1 && lsusb 2>&1 | grep -i ftdi\")",
+      "Bash(wsl -e bash -c \"lsusb 2>&1\")",
+      "Bash(wsl -e bash -c \"cd /mnt/c/Users/jason/Documents/FPGA-Packet-Processor && make bitstream_packet_up5k PCF=constraints/icebreaker_uart_swapped.pcf BUILD_DIR=build/ice40_swapped 2>&1 | tail -5\")",
+      "Bash(wsl -e bash -c \"cd /mnt/c/Users/jason/Documents/FPGA-Packet-Processor && iceprog build/ice40_swapped/packet_processor_up5k_top.bin 2>&1 | tail -5\")",
+      "Bash(wsl -e bash -c \"cat /mnt/c/Users/jason/.claude/projects/c--Users-jason-Documents-FPGA-Packet-Processor/0c50f98c-9093-4173-a88d-2dfccc883ec4/tool-results/bhc946mg5.txt | grep 'cdone'\")",
+      "Bash(wsl -e:*)",
+      "Bash(wsl -d Ubuntu -- ls /mnt/c/Users/jason/Documents/FPGA-Packet-Processor/)",
+      "Bash(wsl -d Ubuntu -- ls ~/Documents/FPGA-Packet-Processor/)",
+      "Bash(wsl -d Ubuntu -- bash -c \"ls /mnt/c/Users/jason/Documents/FPGA-Packet-Processor/\")",
+      "Bash(wsl -d Ubuntu -- bash -c \"ls /mnt/c/Users/jason/Documents/FPGA-Packet-Processor/tb/\")"
+    ]
+  }
+}

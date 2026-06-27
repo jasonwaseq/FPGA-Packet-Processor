@@ -110,3 +110,43 @@ async def parser_detects_bad_checksum(dut) -> None:
     assert int(dut.checksum_ok_o.value) == 0
     assert int(dut.parse_error_o.value) != 0
     await accept_header(dut)
+
+
+@cocotb.test()
+async def parser_accepts_zero_payload_packet(dut) -> None:
+    await start_clock(dut)
+    dut.valid_i.value = 0
+    dut.sop_i.value = 0
+    dut.eop_i.value = 0
+    dut.hdr_ready_i.value = 0
+    dut.payload_ready_i.value = 1
+    await reset_dut(dut)
+
+    packet = Packet(
+        protocol=0x11,
+        flags=0x01,
+        ttl=0x20,
+        src_addr=0x1001,
+        dst_addr=0x2001,
+        src_port=0x1234,
+        dst_port=0x2222,
+        packet_id=0x1000,
+        payload=b"",
+    ).encode()
+
+    dut.packet_len_i.value = len(packet)
+    await drive_packet(dut, packet)
+
+    for _ in range(64):
+        await RisingEdge(dut.clk)
+        if int(dut.hdr_valid_o.value):
+            break
+    else:
+        raise AssertionError("parser never asserted hdr_valid for zero-payload packet")
+
+    assert int(dut.parse_error_o.value) == 0
+    assert int(dut.checksum_ok_o.value) == 1
+    assert int(dut.protocol_o.value) == 0x11
+    assert int(dut.total_length_o.value) == 20
+    assert int(dut.payload_length_o.value) == 0
+    await accept_header(dut)

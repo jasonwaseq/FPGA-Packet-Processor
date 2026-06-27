@@ -39,6 +39,7 @@ PCF_BRINGUP_ALT ?= constraints/icebreaker_uart_swapped.pcf
 SYNTH_FLAGS ?=
 PORT ?= auto
 BAUD ?= 1500000
+PACKET_VALIDATE_BAUD ?= 115200
 VALIDATE_MODE ?= auto
 VALIDATE_ROUNDS ?= 32
 VALIDATE_PAYLOAD_BYTES ?= 64
@@ -202,7 +203,7 @@ validate_fpga_strict:
 .PHONY: validate_project_hw
 validate_project_hw:
 	$(MAKE) flash_packet_up5k
-	$(PYTHON) -m host.validate_project_hw --port "$(PORT)" --baud $(BAUD) --timeout $(VALIDATE_TIMEOUT) --benchmark-count $(PROJECT_VALIDATE_BENCH_COUNT)
+	$(PYTHON) -m host.validate_project_hw --port "$(PORT)" --baud $(PACKET_VALIDATE_BAUD) --timeout $(VALIDATE_TIMEOUT) --benchmark-count $(PROJECT_VALIDATE_BENCH_COUNT)
 
 .PHONY: validate_list_ports
 validate_list_ports:

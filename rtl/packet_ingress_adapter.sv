@@ -24,6 +24,7 @@ module packet_ingress_adapter #(
     logic [15:0] rd_ptr_q;
     logic        write_active_q;
     logic        read_active_q;
+    logic        packet_valid_q;
     logic [15:0] packet_len_q;
     logic [7:0]  read_data_q;
     logic        read_valid_q;
@@ -31,7 +32,7 @@ module packet_ingress_adapter #(
     logic        read_eop_q;
 
     assign in_ready_o          = !packet_available_o && (wr_ptr_q < MAX_PACKET_BYTES);
-    assign packet_available_o  = (packet_len_q != 16'd0);
+    assign packet_available_o  = packet_valid_q;
     assign packet_len_o        = packet_len_q;
     assign read_data_o         = read_data_q;
     assign read_valid_o        = read_valid_q;
@@ -44,6 +45,7 @@ module packet_ingress_adapter #(
             rd_ptr_q       <= '0;
             write_active_q <= 1'b0;
             read_active_q  <= 1'b0;
+            packet_valid_q <= 1'b0;
             packet_len_q   <= '0;
             read_data_q    <= '0;
             read_valid_q   <= 1'b0;
@@ -61,6 +63,7 @@ module packet_ingress_adapter #(
                 rd_ptr_q       <= '0;
                 write_active_q <= 1'b0;
                 read_active_q  <= 1'b0;
+                packet_valid_q <= 1'b0;
                 packet_len_q   <= '0;
             end else begin
                 if (in_valid_i && in_ready_o) begin
@@ -71,6 +74,7 @@ module packet_ingress_adapter #(
                     packet_mem[wr_ptr_q] <= in_data_i;
                     wr_ptr_q <= wr_ptr_q + 1'b1;
                     if (in_eop_i) begin
+                        packet_valid_q <= 1'b1;
                         packet_len_q   <= wr_ptr_q + 1'b1;
                         write_active_q <= 1'b0;
                     end
@@ -88,7 +92,9 @@ module packet_ingress_adapter #(
                     read_eop_q   <= (rd_ptr_q == (packet_len_q - 1'b1));
                     if (rd_ptr_q == (packet_len_q - 1'b1)) begin
                         rd_ptr_q      <= '0;
+                        wr_ptr_q      <= '0;  // reset write pointer so in_ready_o can go high again
                         read_active_q <= 1'b0;
+                        packet_valid_q <= 1'b0;
                         read_done_o   <= 1'b1;
                     end else begin
                         rd_ptr_q <= rd_ptr_q + 1'b1;

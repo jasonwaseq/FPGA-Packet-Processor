@@ -59,9 +59,14 @@ module packet_header_parser (
     logic [7:0]   checksum_hi_q;
     logic         checksum_phase_q;
 
+    // Combinational header field aliases (reflect what is already stored)
     logic [7:0] h0, h1, h2, h3;
     logic [15:0] h4_5, h6_7, h8_9, h10_11, h12_13, h14_15, h16_17;
-    logic [3:0] parse_error_next;
+
+    // Combinational: final checksum including the word currently being processed
+    // (needed because the NBA for checksum_sum_q won't commit until after we sample it)
+    logic [15:0] csum_final;
+    logic [3:0]  parse_error_next;
 
     assign ready_o        = 1'b1;
     assign header_bytes_o = header_q;
@@ -78,7 +83,16 @@ module packet_header_parser (
     assign h14_15 = {header_q[(14*8)+:8], header_q[(15*8)+:8]};
     assign h16_17 = {header_q[(16*8)+:8], header_q[(17*8)+:8]};
 
+    // When processing the last header byte (byte 19), checksum_phase_q is 1 and we
+    // need the sum INCLUDING that last word — but the NBA hasn't committed yet.
+    // Compute it combinationally so parse_error_next and checksum_ok_o are correct.
     always @* begin
+        if (checksum_phase_q && (byte_count_q == (PACKET_HEADER_BYTES_U16 - 16'd1))) begin
+            csum_final = ones_add16_local(checksum_sum_q, {checksum_hi_q, data_i});
+        end else begin
+            csum_final = checksum_sum_q;
+        end
+
         parse_error_next = PARSE_ERR_NONE;
         if (packet_len_i < PACKET_HEADER_BYTES_U16) begin
             parse_error_next = PARSE_ERR_SHORT;
@@ -92,7 +106,7 @@ module packet_header_parser (
             parse_error_next = PARSE_ERR_LENGTH;
         end else if (h6_7 != (packet_len_i - PACKET_HEADER_BYTES_U16)) begin
             parse_error_next = PARSE_ERR_LENGTH;
-        end else if (checksum_sum_q != 16'hFFFF) begin
+        end else if (csum_final != 16'hFFFF) begin
             parse_error_next = PARSE_ERR_HDR_CHECKSUM;
         end
     end
@@ -132,58 +146,61 @@ module packet_header_parser (
                 hdr_valid_o <= 1'b0;
             end
 
-            if (valid_i && sop_i) begin
-                header_q         <= '0;
-                byte_count_q     <= '0;
-                checksum_sum_q   <= 16'h0000;
-                checksum_hi_q    <= 8'h00;
-                checksum_phase_q <= 1'b0;
-                hdr_valid_o      <= 1'b0;
-                parse_error_o    <= PARSE_ERR_NONE;
-                checksum_ok_o    <= 1'b0;
-            end
-
             if (valid_i) begin
-                if (byte_count_q < PACKET_HEADER_BYTES_U16) begin
-                    header_q[(byte_count_q*8)+:8] <= data_i;
+                if (sop_i) begin
+                    // Reset state and treat this byte as byte index 0.
+                    header_q          <= {152'h0, data_i};
+                    byte_count_q      <= 16'd1;       // next byte will be index 1
+                    checksum_sum_q    <= 16'h0000;
+                    checksum_hi_q     <= data_i;      // byte 0 is HI of first checksum word
+                    checksum_phase_q  <= 1'b1;        // HI consumed
+                    hdr_valid_o       <= 1'b0;
+                    parse_error_o     <= PARSE_ERR_NONE;
+                    checksum_ok_o     <= 1'b0;
+                end else begin
+                    // Non-SOP bytes: process with current byte_count_q
+                    if (byte_count_q < PACKET_HEADER_BYTES_U16) begin
+                        header_q[(byte_count_q*8)+:8] <= data_i;
 
-                    if (!checksum_phase_q) begin
-                        checksum_hi_q    <= data_i;
-                        checksum_phase_q <= 1'b1;
-                    end else begin
-                        checksum_sum_q   <= ones_add16_local(checksum_sum_q, {checksum_hi_q, data_i});
-                        checksum_phase_q <= 1'b0;
+                        if (!checksum_phase_q) begin
+                            checksum_hi_q    <= data_i;
+                            checksum_phase_q <= 1'b1;
+                        end else begin
+                            checksum_sum_q   <= ones_add16_local(checksum_sum_q, {checksum_hi_q, data_i});
+                            checksum_phase_q <= 1'b0;
+                        end
+                    end else if (payload_ready_i) begin
+                        payload_data_o  <= data_i;
+                        payload_valid_o <= 1'b1;
+                        payload_sop_o   <= (byte_count_q == PACKET_HEADER_BYTES_U16);
+                        payload_eop_o   <= eop_i;
                     end
-                end else if (payload_ready_i) begin
-                    payload_data_o  <= data_i;
-                    payload_valid_o <= 1'b1;
-                    payload_sop_o   <= (byte_count_q == PACKET_HEADER_BYTES_U16);
-                    payload_eop_o   <= eop_i;
-                end
 
-                if (byte_count_q == (PACKET_HEADER_BYTES_U16 - 16'd1)) begin
-                    version_o        <= h0[7:4];
-                    hdr_len_words_o  <= h0[3:0];
-                    protocol_o       <= h1;
-                    flags_o          <= h2;
-                    ttl_o            <= h3;
-                    total_length_o   <= h4_5;
-                    payload_length_o <= h6_7;
-                    src_addr_o       <= h8_9;
-                    dst_addr_o       <= h10_11;
-                    src_port_o       <= h12_13;
-                    dst_port_o       <= h14_15;
-                    packet_id_o      <= h16_17;
-                    parse_error_o    <= parse_error_next;
-                    checksum_ok_o    <= (checksum_sum_q == 16'hFFFF);
-                    hdr_valid_o      <= 1'b1;
-                end
+                    // Finalize header on last byte (index 19)
+                    if (byte_count_q == (PACKET_HEADER_BYTES_U16 - 16'd1)) begin
+                        version_o        <= h0[7:4];
+                        hdr_len_words_o  <= h0[3:0];
+                        protocol_o       <= h1;
+                        flags_o          <= h2;
+                        ttl_o            <= h3;
+                        total_length_o   <= h4_5;
+                        payload_length_o <= h6_7;
+                        src_addr_o       <= h8_9;
+                        dst_addr_o       <= h10_11;
+                        src_port_o       <= h12_13;
+                        dst_port_o       <= h14_15;
+                        packet_id_o      <= h16_17;
+                        parse_error_o    <= parse_error_next;
+                        checksum_ok_o    <= (csum_final == 16'hFFFF);
+                        hdr_valid_o      <= 1'b1;
+                    end
 
-                byte_count_q <= byte_count_q + 1'b1;
+                    byte_count_q <= byte_count_q + 1'b1;
 
-                if (eop_i && ((byte_count_q + 16'd1) < PACKET_HEADER_BYTES_U16)) begin
-                    parse_error_o <= PARSE_ERR_SHORT;
-                    hdr_valid_o   <= 1'b1;
+                    if (eop_i && ((byte_count_q + 16'd1) < PACKET_HEADER_BYTES_U16)) begin
+                        parse_error_o <= PARSE_ERR_SHORT;
+                        hdr_valid_o   <= 1'b1;
+                    end
                 end
             end
         end

@@ -28,10 +28,9 @@ class SerialLink:
             if not chunk:
                 raise TimeoutError("timed out waiting for UART frame")
             try:
-                decoded = self._decoder.feed(chunk)
+                for frame in self._decoder.feed(chunk):
+                    return frame
             except ValueError:
-                # Ignore malformed/partial frame noise and keep scanning for the next valid frame.
+                # Malformed frame (bad CRC, bad length, etc.) — discard and keep scanning.
                 continue
-            for frame in decoded:
-                return frame
 

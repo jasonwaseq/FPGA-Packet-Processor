@@ -48,6 +48,21 @@ TESTS = {
         "module": "tb.test_classifier_engine",
         "sources": COMMON_RTL + [RTL / "rule_table.sv", RTL / "classifier_engine.sv", TB / "dut_classifier_engine.sv"],
     },
+    "up5k_top": {
+        "toplevel": "dut_up5k_top",
+        "module": "tb.test_up5k_top",
+        "sources": COMMON_RTL
+        + [
+            RTL / "uart_rx.sv",
+            RTL / "uart_tx.sv",
+            RTL / "uart_frame_decoder.sv",
+            RTL / "uart_frame_encoder.sv",
+            RTL / "packet_ingress_adapter.sv",
+            RTL / "packet_header_parser.sv",
+            RTL / "packet_processor_up5k_top.sv",
+            TB / "dut_up5k_top.sv",
+        ],
+    },
 }
 
 

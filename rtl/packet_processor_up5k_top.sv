@@ -8,6 +8,7 @@ module packet_processor_up5k_top (
     localparam int unsigned MAX_FRAME_PAYLOAD = 22;
     localparam int unsigned MAX_PACKET_BYTES = 20;
     localparam int unsigned RESULT_BYTES = packet_processor_pkg::RESULT_BYTES;
+    localparam logic [15:0] RESULT_BYTES_U16 = 16'd20;
 
     localparam logic [7:0] MSG_TYPE_DATA_PACKET = packet_processor_pkg::MSG_TYPE_DATA_PACKET;
     localparam logic [7:0] MSG_TYPE_PKT_RESULT = packet_processor_pkg::MSG_TYPE_PKT_RESULT;
@@ -160,28 +161,33 @@ module packet_processor_up5k_top (
 
             if (parser_hdr_valid && !result_pending_q) begin
                 result_pending_q <= 1'b1;
-                result_seq_q <= rx_seq_q;
-                result_payload_q <= '0;
-                result_payload_q[(0*8)+:8] <= result_flags;
-                result_payload_q[(1*8)+:8] <= MODE_INSPECT;
-                result_payload_q[(2*8)+:8] <= result_rule_id;
-                result_payload_q[(3*8)+:8] <= result_action;
-                result_payload_q[(4*8)+:8] <= {4'd0, result_error};
-                result_payload_q[(5*8)+:8] <= parser_protocol;
-                result_payload_q[(6*8)+:8] <= parser_packet_id[15:8];
-                result_payload_q[(7*8)+:8] <= parser_packet_id[7:0];
-                result_payload_q[(8*8)+:8] <= parser_src_addr[15:8];
-                result_payload_q[(9*8)+:8] <= parser_src_addr[7:0];
-                result_payload_q[(10*8)+:8] <= result_dst_addr[15:8];
-                result_payload_q[(11*8)+:8] <= result_dst_addr[7:0];
-                result_payload_q[(12*8)+:8] <= parser_src_port[15:8];
-                result_payload_q[(13*8)+:8] <= parser_src_port[7:0];
-                result_payload_q[(14*8)+:8] <= result_dst_port[15:8];
-                result_payload_q[(15*8)+:8] <= result_dst_port[7:0];
-                result_payload_q[(16*8)+:8] <= parser_total_len[15:8];
-                result_payload_q[(17*8)+:8] <= parser_total_len[7:0];
-                result_payload_q[(18*8)+:8] <= parser_payload_len[15:8];
-                result_payload_q[(19*8)+:8] <= parser_payload_len[7:0];
+                result_seq_q     <= rx_seq_q;
+                // Single concatenation avoids overlapping-NBA synthesis issues in Yosys.
+                // Bits [175:160] = padding (2 unused bytes of the 22-byte max-payload slot).
+                // Bytes are packed LSB-first: byte N occupies bits [(N*8)+7:(N*8)].
+                result_payload_q <= {
+                    16'h0000,                    // bits[175:160] padding (bytes 20-21)
+                    parser_payload_len[7:0],     // bits[159:152] byte 19
+                    parser_payload_len[15:8],    // bits[151:144] byte 18
+                    parser_total_len[7:0],       // bits[143:136] byte 17
+                    parser_total_len[15:8],      // bits[135:128] byte 16
+                    result_dst_port[7:0],        // bits[127:120] byte 15
+                    result_dst_port[15:8],       // bits[119:112] byte 14
+                    parser_src_port[7:0],        // bits[111:104] byte 13
+                    parser_src_port[15:8],       // bits[103: 96] byte 12
+                    result_dst_addr[7:0],        // bits[ 95: 88] byte 11
+                    result_dst_addr[15:8],       // bits[ 87: 80] byte 10
+                    parser_src_addr[7:0],        // bits[ 79: 72] byte 9
+                    parser_src_addr[15:8],       // bits[ 71: 64] byte 8
+                    parser_packet_id[7:0],       // bits[ 63: 56] byte 7
+                    parser_packet_id[15:8],      // bits[ 55: 48] byte 6
+                    parser_protocol,             // bits[ 47: 40] byte 5
+                    {4'd0, result_error},        // bits[ 39: 32] byte 4
+                    result_action,               // bits[ 31: 24] byte 3
+                    result_rule_id,             // bits[ 23: 16] byte 2
+                    MODE_INSPECT,                // bits[ 15:  8] byte 1
+                    result_flags                 // bits[  7:  0] byte 0
+                };
             end
 
             if (enc_start) begin
@@ -302,7 +308,7 @@ module packet_processor_up5k_top (
         .msg_type_i(MSG_TYPE_PKT_RESULT),
         .flags_i(8'h00),
         .seq_i(result_seq_q),
-        .payload_len_i(RESULT_BYTES),
+        .payload_len_i(RESULT_BYTES_U16),
         .payload_i(result_payload_q),
         .ready_o(enc_ready),
         .busy_o(),

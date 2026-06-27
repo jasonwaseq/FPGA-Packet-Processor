@@ -39,9 +39,10 @@ module uart_frame_encoder #(
         end
     endfunction
 
-    typedef enum logic [2:0] {
+    typedef enum logic [3:0] {
         ENC_IDLE,
         ENC_FLAG_START,
+        ENC_VER,
         ENC_BODY,
         ENC_CRC_HI,
         ENC_CRC_LO,
@@ -60,31 +61,46 @@ module uart_frame_encoder #(
     logic [7:0]  escape_byte_q;
     logic [7:0]  current_raw_byte;
 
-    function automatic logic [7:0] get_payload_byte(
-        input logic [(MAX_FRAME_PAYLOAD*8)-1:0] payload,
-        input logic [15:0] idx
-    );
-        begin
-            get_payload_byte = payload[(idx*8) +: 8];
-        end
-    endfunction
+    // uart_tx.ready_o is registered and stays high for the byte-accept cycle, then
+    // drops one cycle later. Without gating, the FSM advances through two states on
+    // the same ready pulse and presents a second byte while uart_tx is already busy,
+    // dropping every other byte. tx_primed_q ensures exactly one byte is issued per
+    // accept: it clears on a send and only re-arms after uart_tx is observed busy.
+    logic        tx_primed_q;
+    logic        tx_take;
+    assign tx_take = tx_ready_i && tx_primed_q;
 
+    // body_index=0 is MSG_TYPE; PROTOCOL_VERSION is sent in the dedicated ENC_VER state
+    // so it never goes through this mux. Payload indices 0-19 occupy body_index 5-24.
     always_comb begin
-        if (body_index_q == 16'd0) begin
-            current_raw_byte = PROTOCOL_VERSION;
-        end else if (body_index_q == 16'd1) begin
-            current_raw_byte = msg_type_q;
-        end else if (body_index_q == 16'd2) begin
-            current_raw_byte = flags_q;
-        end else if (body_index_q == 16'd3) begin
-            current_raw_byte = seq_q;
-        end else if (body_index_q == 16'd4) begin
-            current_raw_byte = payload_len_q[15:8];
-        end else if (body_index_q == 16'd5) begin
-            current_raw_byte = payload_len_q[7:0];
-        end else begin
-            current_raw_byte = get_payload_byte(payload_q, body_index_q - 16'd6);
-        end
+        case (body_index_q)
+            16'd0:  current_raw_byte = msg_type_q;
+            16'd1:  current_raw_byte = flags_q;
+            16'd2:  current_raw_byte = seq_q;
+            16'd3:  current_raw_byte = payload_len_q[15:8];
+            16'd4:  current_raw_byte = payload_len_q[7:0];
+            16'd5:  current_raw_byte = payload_q[  7:  0];
+            16'd6:  current_raw_byte = payload_q[ 15:  8];
+            16'd7:  current_raw_byte = payload_q[ 23: 16];
+            16'd8:  current_raw_byte = payload_q[ 31: 24];
+            16'd9:  current_raw_byte = payload_q[ 39: 32];
+            16'd10: current_raw_byte = payload_q[ 47: 40];
+            16'd11: current_raw_byte = payload_q[ 55: 48];
+            16'd12: current_raw_byte = payload_q[ 63: 56];
+            16'd13: current_raw_byte = payload_q[ 71: 64];
+            16'd14: current_raw_byte = payload_q[ 79: 72];
+            16'd15: current_raw_byte = payload_q[ 87: 80];
+            16'd16: current_raw_byte = payload_q[ 95: 88];
+            16'd17: current_raw_byte = payload_q[103: 96];
+            16'd18: current_raw_byte = payload_q[111:104];
+            16'd19: current_raw_byte = payload_q[119:112];
+            16'd20: current_raw_byte = payload_q[127:120];
+            16'd21: current_raw_byte = payload_q[135:128];
+            16'd22: current_raw_byte = payload_q[143:136];
+            16'd23: current_raw_byte = payload_q[151:144];
+            16'd24: current_raw_byte = payload_q[159:152];
+            default: current_raw_byte = 8'h00;
+        endcase
     end
 
     assign ready_o = (state_q == ENC_IDLE);
@@ -105,9 +121,20 @@ module uart_frame_encoder #(
             tx_data_o         <= 8'h00;
             tx_valid_o        <= 1'b0;
             done_o            <= 1'b0;
+            tx_primed_q       <= 1'b1;
         end else begin
             tx_valid_o <= 1'b0;
             done_o     <= 1'b0;
+
+            // Proper valid/ready handshake: issue one byte per accept. tx_primed_q
+            // clears when a byte is issued and re-arms only once that byte is actually
+            // accepted (tx_valid_o && tx_ready_i). Works for a back-pressuring sink
+            // (uart_tx) and for an always-ready sink alike.
+            if (tx_take && (state_q != ENC_IDLE)) begin
+                tx_primed_q <= 1'b0;
+            end else if (tx_valid_o && tx_ready_i) begin
+                tx_primed_q <= 1'b1;
+            end
 
             case (state_q)
                 ENC_IDLE: begin
@@ -125,21 +152,32 @@ module uart_frame_encoder #(
                 end
 
                 ENC_FLAG_START: begin
-                    if (tx_ready_i) begin
+                    if (tx_take) begin
                         tx_data_o  <= FRAME_FLAG;
                         tx_valid_o <= 1'b1;
+                        state_q    <= ENC_VER;
+                    end
+                end
+
+                // Send PROTOCOL_VERSION explicitly outside the body_index mux to avoid
+                // synthesis reordering of the case statement output.
+                ENC_VER: begin
+                    if (tx_take) begin
+                        tx_data_o  <= PROTOCOL_VERSION;
+                        tx_valid_o <= 1'b1;
+                        crc_q      <= crc16_ccitt_next_local(crc_q, PROTOCOL_VERSION);
                         state_q    <= ENC_BODY;
                     end
                 end
 
                 ENC_BODY: begin
-                    if (tx_ready_i) begin
+                    if (tx_take) begin
                         if (escape_pending_q) begin
                             tx_data_o         <= escape_byte_q;
                             tx_valid_o        <= 1'b1;
                             escape_pending_q  <= 1'b0;
                             body_index_q      <= body_index_q + 1'b1;
-                            if (body_index_q == (payload_len_q + 16'd5)) begin
+                            if (body_index_q == (payload_len_q + 16'd4)) begin
                                 state_q <= ENC_CRC_HI;
                             end
                         end else if ((current_raw_byte == FRAME_FLAG) || (current_raw_byte == FRAME_ESCAPE)) begin
@@ -153,7 +191,7 @@ module uart_frame_encoder #(
                             tx_valid_o   <= 1'b1;
                             crc_q        <= crc16_ccitt_next_local(crc_q, current_raw_byte);
                             body_index_q <= body_index_q + 1'b1;
-                            if (body_index_q == (payload_len_q + 16'd5)) begin
+                            if (body_index_q == (payload_len_q + 16'd4)) begin
                                 state_q <= ENC_CRC_HI;
                             end
                         end
@@ -161,7 +199,7 @@ module uart_frame_encoder #(
                 end
 
                 ENC_CRC_HI: begin
-                    if (tx_ready_i) begin
+                    if (tx_take) begin
                         if (!escape_pending_q) begin
                             if ((crc_q[15:8] == FRAME_FLAG) || (crc_q[15:8] == FRAME_ESCAPE)) begin
                                 tx_data_o        <= FRAME_ESCAPE;
@@ -183,7 +221,7 @@ module uart_frame_encoder #(
                 end
 
                 ENC_CRC_LO: begin
-                    if (tx_ready_i) begin
+                    if (tx_take) begin
                         if (!escape_pending_q) begin
                             if ((crc_q[7:0] == FRAME_FLAG) || (crc_q[7:0] == FRAME_ESCAPE)) begin
                                 tx_data_o        <= FRAME_ESCAPE;
@@ -205,7 +243,7 @@ module uart_frame_encoder #(
                 end
 
                 ENC_FLAG_END: begin
-                    if (tx_ready_i) begin
+                    if (tx_take) begin
                         tx_data_o  <= FRAME_FLAG;
                         tx_valid_o <= 1'b1;
                         done_o     <= 1'b1;
